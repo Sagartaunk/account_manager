@@ -9,7 +9,6 @@ use storage::middle::Middleware;
 
 #[derive(Debug , Serialize , Deserialize , Clone)]
 struct Account {
-    id : i32 ,
     email : String,
     password : String,
     date : String,
@@ -57,12 +56,11 @@ async fn get_data(email : web::Json<String>) -> HttpResponse {
 
     let result = match stmt.query_map([email.as_str()], |accounts| {
         Ok(Account {
-            id: accounts.get(0)?,
-            email: accounts.get(1)?,
-            password: accounts.get(2)?,
-            date: accounts.get(3)?,
-            token: accounts.get(4)?,
-            account_type: accounts.get(5)?,
+            email: accounts.get(0)?,
+            password: accounts.get(1)?,
+            date: accounts.get(2)?,
+            token: accounts.get(3)?,
+            account_type: accounts.get(4)?,
         })
     }) {
         Ok(mapped_rows) => {
@@ -88,7 +86,7 @@ async fn create_data(account : web::Json<Account>) -> HttpResponse {
             rusqlite::Connection::open("accounts.db").unwrap()
         }
     };
-    conn.execute("CREATE TABLE IF NOT EXISTS accounts (id INTEGER PRIMARY KEY, email TEXT NOT NULL, password TEXT NOT NULL , Creation TEXT NOT NULL, TOKEN  TEXT NOT NULL , Type TEXT NOT NULL )" , ()).unwrap();
+    conn.execute("CREATE TABLE IF NOT EXISTS accounts (email TEXT NOT NULL, password TEXT NOT NULL , Creation TEXT NOT NULL, TOKEN  PRIMARY KEY , Type TEXT NOT NULL )" , ()).unwrap();
     match conn.execute("INSERT INTO accounts (email, password, Creation, TOKEN, Type) VALUES (?1, ?2, ?3, ?4, ?5)" , (&account.email, &account.password, &account.date, &account.token, &account.account_type)) {
         Ok(_) => HttpResponse::Ok().finish(),
         Err(_) => HttpResponse::InternalServerError().finish()
