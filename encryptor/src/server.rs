@@ -5,6 +5,29 @@ use serde::{Deserialize, Serialize};
 use chrono::Local;
 use rand::{distributions::Alphanumeric, Rng};
 use log;
+use aes_gcm::{self , KeyInit , aead::Aead};
+
+fn storage_ip() -> String {
+    let ip = String::from("http://192.168.1.100:51001");
+    ip
+}
+fn storage_token() -> String {
+    let token = String::from("Bearer this_is_a_secure_token");
+    token
+}
+fn database_ip() -> String {
+    let ip = String::from("http://192.168.1.100:51000");
+    ip
+}
+fn database_token() -> String {
+    let token = String::from("Bearer this_is_a_secure_token");
+    token
+}
+
+
+
+
+
 #[derive(Debug , Serialize , Deserialize , Clone)]
 pub struct Login {
     pub email : String,
@@ -17,18 +40,23 @@ pub struct Data_login {
     pub password : String,
     pub token : String,
 }
-#[derive(Debug , Serialize , Deserialize , Clone)]
-pub struct Data_register {
-    pub email : String ,
-    pub password : String,
-    pub date: String,
-    pub token : String,
-    pub account_type : String,
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Data_register {
+    pub email: String,
+    pub password: String,
+    pub date: String,
+    pub token: String, 
+    pub account_type: String,
 }
 
 #[derive(Debug , Serialize , Deserialize , Clone)]
 pub struct Database {
+    pub token : String,
+    pub data : Option<Vec<u8>>,
+} 
+#[derive(Debug , Serialize , Deserialize , Clone)]
+pub struct DatabasD {
     pub token : String,
     pub data : Option<Vec<u8>>,
 } 
@@ -37,7 +65,7 @@ pub struct Database {
 async fn storage_get(email : String) -> Value {
     let client = Client::new();
     let mut result;
-    let res = client.post("http://192.168.1.101:1020/api/get").header("Authorization" , "Bearer this_is_a_secure_token").header("Content-Type" , "application/json").json(&json!(email)).send().await;
+    let res = client.post(format!("{}/api/get" , storage_ip())).header("Authorization" , storage_token()).header("Content-Type" , "application/json").body(format!("\"{}\"", email)).send().await;
     match res {
         Ok(response) => {
             if response.status().is_success() {
@@ -54,55 +82,89 @@ async fn storage_get(email : String) -> Value {
     result
 
 }
-async fn account_create(data : Data_register) {
+async fn account_create(data: Data_register) {
     let client = Client::new();
-
-    //change the ip and the authorization token to your own
-    let res1 = client.post("http://192.168.1.101:1020/api/create").header("Authorization" , "Bearer this_is_a_secure_token").header("Content-Type" , "application/json").json(&data).send().await;
+    let res1 = client.post(format!("{}/api/create", storage_ip()))
+        .header("Authorization", storage_token())
+        .header("Content-Type", "application/json")
+        .json(&data)
+        .send()
+        .await;
+    
     match res1 {
         Ok(response) => {
-            if response.status().is_success() {}
+            if response.status().is_success() {
+                log::info!("Account created successfully");
+            } else {
+                log::error!("Failed to create account: HTTP {}", response.status());
+            }
         },
         Err(e) => {
             log::error!("Error: {}", e);
             log::error!("Failed to create account");            
         }
     }
-    let data = Database{
+    
+
+    let db_data = Database { 
         token: data.token.clone(),
         data: None,
     };
 
     let client = Client::new();
-    let res2 = client.post("http://192.168.1.101:2050/api/create").header("Authorization" , "Bearer this_is_a_secure_token").header("Content-Type" , "application/json").json(&json!{data}).send().await;
+    let res2 = client.post(format!("{}/api/create", database_ip()))
+        .header("Authorization", database_token())
+        .header("Content-Type", "application/json")
+        .json(&db_data)
+        .send()
+        .await;
+    
     match res2 {
         Ok(response) => {
-            if response.status().is_success() {}
+            if response.status().is_success() {
+                log::info!("Database entry created successfully");
+            } else {
+                log::error!("Failed to create database entry: HTTP {}", response.status());
+            }
         },
         Err(e) => {
             log::error!("Error: {}", e);
-            log::error!("Failed to create account");            
         }
     }
 }
 
-async fn data_get(token : String) -> Database {
+async fn data_get(token: String) -> Database {
     let client = Client::new();
-    let res = client.post("http://192.168.1.101:2050/api/get").header("Authorization" , "Bearer this_is_a_secure_token").header("Content-Type" , "application/json").json(&json!{token}).send().await;
-    let mut database = Database{
-        token : token.clone(),
-        data : None,
+    
+    let res = client.post(format!("{}/api/get", database_ip()))
+        .header("Authorization", database_token())
+        .header("Content-Type", "application/json")
+        .body(format!("\"{}\"", token))
+        .send()
+        .await;
+    
+    let mut database = Database {
+        token: token, 
+        data: None,
     };
+    
     match res {
         Ok(response) => {
-            if response.status().is_success() {   
-                let data : Value = response.json().await.unwrap();
-                if let Some(bytes) = data["data"].as_array().map(|arr| {
-                    arr.iter()
-                       .filter_map(|v| v.as_u64().map(|n| n as u8))
-                       .collect::<Vec<u8>>()
-                }) {
-                    database.data = Some(bytes);
+            if response.status().is_success() {
+                match response.json::<Value>().await {
+                    Ok(data) => {
+                        if data.is_array() && !data.as_array().unwrap().is_empty() {
+                            if let Some(data_obj) = data[0].get("data") {
+                                if let Some(binary_data) = data_obj.as_array() {
+                                    let bytes: Vec<u8> = binary_data.iter()
+                                        .filter_map(|v| v.as_u64().map(|n| n as u8))
+                                        .collect();
+                                    database.data = Some(bytes);
+                                }
+                            }
+                        }
+                    },
+                    Err(e) => log::error!("Failed to parse JSON: {}", e),
                 }
             }
         },
@@ -114,38 +176,82 @@ async fn data_get(token : String) -> Database {
     database
 }
 
-pub async fn login (login : web::Json<Login>) -> HttpResponse{ //need to fix this block 
+pub async fn login(login: web::Json<Login>) -> HttpResponse {  
     let data = storage_get(login.email.clone()).await;
+    
     if data == json!({"error": "Request failed"}) {
-        HttpResponse::InternalServerError().finish()
+        log::error!("Storage service request failed");
+        return HttpResponse::InternalServerError().finish();
     }
-    else {
-        let password = data["password"].as_str().unwrap_or("");
-        log::info!("{}",password); //remove when done
-        if password == login.password {
-            let token = data["token"].as_str().unwrap_or("");
-            let data = data_get(token.to_string()).await;
-            HttpResponse::Ok().json(data)
-        } else {
-            HttpResponse::Unauthorized().finish()
+
+    if !data.is_array() || data.as_array().unwrap().is_empty() {
+        log::error!("No account found for email: {}", login.email);
+        return HttpResponse::Unauthorized().finish();
+    }
+    let account = &data[0];
+    
+    match account.get("password") {
+        Some(password_val) => {
+            let password = password_val.as_str().unwrap_or("");
+            if password == login.password {
+                match account.get("token") {
+                    Some(token_val) => {
+                        let token = token_val.as_str().unwrap_or("");
+                        let data = data_get(token.to_string()).await;
+                        HttpResponse::Ok().json(data)
+                    },
+                    None => {
+                        log::error!("Token not found in account data");
+                        HttpResponse::InternalServerError().finish()
+                    }
+                }
+            } else {
+                HttpResponse::Unauthorized().finish()
+            }
+        },
+        None => {
+            log::error!("Password not found in account data");
+            HttpResponse::InternalServerError().finish()
         }
     }
-
 }
 
-pub async fn register(register : web::Json<Login>) -> HttpResponse {
+pub async fn register(register: web::Json<Login>) -> HttpResponse {
     let email = register.email.clone();
     let password = register.password.clone();
     let date = Local::now().date_naive().to_string();
-    let token = rand::thread_rng().sample_iter(&Alphanumeric).take(30).map(char::from).collect::<String>();
-    let ttype = "user".to_string();
+    let token = rand::thread_rng()
+        .sample_iter(&Alphanumeric)
+        .take(30)
+        .map(char::from)
+        .collect::<String>();
+    
     let data_register = Data_register {
-        email: email,
-        password: password,
-        token: token,
-        date: date,
-        account_type: ttype,
+        email,
+        password,
+        date,
+        token: token.clone(),
+        account_type: "user".to_string(),
     };
+    
     account_create(data_register).await;
     HttpResponse::Ok().finish()
+}
+
+fn encrypt(data : String) -> Vec<u8> {
+    let key = b"an example very very secret key."; // 32 bytes for AES-256
+    let nonce = b"unique nonce"; // 12 bytes for AES-GCM
+
+    let cipher = aes_gcm::Aes256Gcm::new(key.into());
+    let ciphertext = cipher.encrypt(nonce.into(), data.as_bytes()).expect("encryption failure!");
+
+    ciphertext
+}
+fn decrypt(ciphertext : Vec<u8>) -> String {
+    let key = b"an example very very secret key."; // 32 bytes for AES-256
+    let nonce = b"unique nonce"; // 12 bytes for AES-GCM    
+    let cipher = aes_gcm::Aes256Gcm::new(key.into());
+    let plaintext = cipher.decrypt(nonce.into(), ciphertext.as_ref()).expect("decryption failure!");
+
+    String::from_utf8(plaintext).expect("Invalid UTF-8 sequence")
 }

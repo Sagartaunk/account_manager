@@ -21,7 +21,7 @@ struct Account {
 async fn main() -> std::io::Result<()> {
     env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
     let device_ip = local_ip().unwrap();
-    let bind_address = format!("{}:1020", device_ip);
+    let bind_address = format!("{}:51001", device_ip);
     log::info!("Starting at http://{}", bind_address);
     HttpServer::new(|| {
         App::new()
@@ -92,3 +92,4 @@ async fn create_data(account : web::Json<Account>) -> HttpResponse {
         Err(_) => HttpResponse::InternalServerError().finish()
     }
 }
+

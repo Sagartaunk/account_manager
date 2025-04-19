@@ -18,7 +18,7 @@ struct Data {
 async fn main() -> std::io::Result<()> {
     env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
     let device_ip = local_ip().unwrap();
-    let bind_address = format!("{}:2050", device_ip);
+    let bind_address = format!("{}:51000", device_ip);
     log::info!("Starting at http://{}", bind_address);
     HttpServer::new(|| {
         App::new()
