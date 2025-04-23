@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use chrono::Local;
 use rand::{distributions::Alphanumeric, Rng};
 use log;
-use aes_gcm::{self , KeyInit , aead::Aead};
+use bcrypt::{verify  , hash , DEFAULT_COST };
 
 fn storage_ip() -> String {
     let ip = String::from("http://10.0.0.238:51001");
@@ -85,7 +85,7 @@ async fn storage_get(email : String) -> Value {
 async fn account_create(data: Data_register) {
     let data = Data_register{
         email: data.email,
-        password: bcrypt::hash(data.password, bcrypt::DEFAULT_COST).unwrap(),
+        password: hash(data.password, DEFAULT_COST).unwrap(),
         date: data.date,
         token: data.token,
         account_type: data.account_type,
@@ -200,7 +200,7 @@ pub async fn login(login: web::Json<Login>) -> HttpResponse {
     match account.get("password") {
         Some(password_val) => {
             let password = password_val.as_str().unwrap_or("");
-            if bcrypt::verify(login.password.clone() , password).unwrap_or(false) {
+            if verify(login.password.clone() , password).unwrap_or(false) {
                 match account.get("token") {
                     Some(token_val) => {
                         let token = token_val.as_str().unwrap_or("");
