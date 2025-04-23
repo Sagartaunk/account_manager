@@ -28,6 +28,7 @@ async fn main() -> std::io::Result<()> {
                     .wrap(Middleware)
                     .route("/create", web::post().to(create_data))
                     .route("/get" , web::post().to(get_data))
+                    .route("/edit" , web::post().to(edit_data))
             )
     }).bind(bind_address)?
     .run()
@@ -79,6 +80,21 @@ async fn create_data(data : web::Json<Data>) -> HttpResponse {
     };
     conn.execute("CREATE TABLE IF NOT EXISTS data (TOKEN TEXT PRIMARY KEY, DATA BLOB )" , ()).unwrap();
     match conn.execute("INSERT INTO data (TOKEN , DATA) VALUES (?1, ?2)" , (&data.token, &data.data)) {
+        Ok(_) => HttpResponse::Ok().finish(),
+        Err(_) => HttpResponse::InternalServerError().finish()
+    }
+}
+
+async fn edit_data(data : web::Json<Data>) -> HttpResponse {
+    let conn = match rusqlite::Connection::open("data.db") {
+        Ok(conn) => conn,
+        Err(_) => {
+            File::create("data.db").unwrap();
+            rusqlite::Connection::open("data.db").unwrap()
+        }
+    };
+    conn.execute("CREATE TABLE IF NOT EXISTS data (TOKEN TEXT PRIMARY KEY, DATA BLOB )" , ()).unwrap();
+    match conn.execute("UPDATE data SET DATA = ?1 WHERE TOKEN = ?2" , (&data.data, &data.token)) {
         Ok(_) => HttpResponse::Ok().finish(),
         Err(_) => HttpResponse::InternalServerError().finish()
     }
