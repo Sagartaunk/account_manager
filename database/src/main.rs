@@ -10,7 +10,7 @@ use database::middle::Middleware;
 #[derive(Debug , Serialize , Deserialize , Clone)]
 struct Data {
     token : String,
-    data : Option<Vec<u8>>
+    data : String
 }
 
 
@@ -28,7 +28,6 @@ async fn main() -> std::io::Result<()> {
                     .wrap(Middleware)
                     .route("/create", web::post().to(create_data))
                     .route("/get" , web::post().to(get_data))
-                    .route("/edit" , web::post().to(edit_data))
             )
     }).bind(bind_address)?
     .run()
@@ -51,7 +50,7 @@ async fn get_data(token : web::Json<String>) -> HttpResponse {
 
     let result = match stmt.query_map([token.as_str()], |row| {
         let token: String = row.get(0)?;
-        let data: Option<Vec<u8>> = row.get(1)?;
+        let data: String = row.get(1)?;
         
         Ok(Data { token, data })
     }) {
@@ -78,23 +77,8 @@ async fn create_data(data : web::Json<Data>) -> HttpResponse {
             rusqlite::Connection::open("data.db").unwrap()
         }
     };
-    conn.execute("CREATE TABLE IF NOT EXISTS data (TOKEN TEXT PRIMARY KEY, DATA BLOB )" , ()).unwrap();
+    conn.execute("CREATE TABLE IF NOT EXISTS data (TOKEN TEXT PRIMARY KEY, DATA TEXT )" , ()).unwrap();
     match conn.execute("INSERT INTO data (TOKEN , DATA) VALUES (?1, ?2)" , (&data.token, &data.data)) {
-        Ok(_) => HttpResponse::Ok().finish(),
-        Err(_) => HttpResponse::InternalServerError().finish()
-    }
-}
-
-async fn edit_data(data : web::Json<Data>) -> HttpResponse {
-    let conn = match rusqlite::Connection::open("data.db") {
-        Ok(conn) => conn,
-        Err(_) => {
-            File::create("data.db").unwrap();
-            rusqlite::Connection::open("data.db").unwrap()
-        }
-    };
-    conn.execute("CREATE TABLE IF NOT EXISTS data (TOKEN TEXT PRIMARY KEY, DATA BLOB )" , ()).unwrap();
-    match conn.execute("UPDATE data SET DATA = ?1 WHERE TOKEN = ?2" , (&data.data, &data.token)) {
         Ok(_) => HttpResponse::Ok().finish(),
         Err(_) => HttpResponse::InternalServerError().finish()
     }
