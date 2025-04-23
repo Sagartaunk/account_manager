@@ -10,7 +10,7 @@ use std::pin::Pin;
 use std::sync::{Arc , Mutex};
 
 fn storage_ip() -> String {
-    let ip = String::from("http://10.0.2.183:51001");
+    let ip = String::from("http://10.0.0.210:51001");
     ip
 }
 fn storage_token() -> String {
@@ -18,7 +18,7 @@ fn storage_token() -> String {
     token
 }
 fn database_ip() -> String {
-    let ip = String::from("http://10.0.2.183:51000");
+    let ip = String::from("http://10.0.0.210:51000");
     ip
 }
 fn database_token() -> String {
@@ -55,14 +55,24 @@ pub struct Data_register {
 #[derive(Debug , Serialize , Deserialize , Clone)]
 pub struct Database {
     pub token : String,
-    pub data : Option<Vec<u8>>,
+    pub data : String,
 } 
 #[derive(Debug , Serialize , Deserialize , Clone)]
-pub struct DatabasD {
-    pub token : String,
-    pub data : Option<Vec<u8>>,
-} 
-
+struct Account {
+    username : String,
+    website : String,
+    password : String,
+}
+#[derive(Debug , Serialize , Deserialize , Clone)]
+struct Accounts{
+    username : String,
+    website : String,
+}
+struct Data {
+    email : String, 
+    password : String,
+    data : String
+}
 
 async fn storage_get(email : String) -> Value {
     let client = Client::new();
@@ -117,7 +127,7 @@ async fn account_create(data: Data_register) {
 
     let db_data = Database { 
         token: data.token.clone(),
-        data: None,
+        data: String::new(),
     };
 
     let client = Client::new();
@@ -154,27 +164,15 @@ async fn data_get(token: String) -> Database {
     
     let mut database = Database {
         token: token, 
-        data: None,
+        data: String::new(),
     };
-    
     match res {
         Ok(response) => {
             if response.status().is_success() {
-                match response.json::<Value>().await {
-                    Ok(data) => {
-                        if data.is_array() && !data.as_array().unwrap().is_empty() {
-                            if let Some(data_obj) = data[0].get("data") {
-                                if let Some(binary_data) = data_obj.as_array() {
-                                    let bytes: Vec<u8> = binary_data.iter()
-                                        .filter_map(|v| v.as_u64().map(|n| n as u8))
-                                        .collect();
-                                    database.data = Some(bytes);
-                                }
-                            }
-                        }
-                    },
-                    Err(e) => log::error!("Failed to parse JSON: {}", e),
-                }
+                let body: Value = response.json().await.unwrap();
+                database.data = Some(body.to_string()).unwrap_or_else(|| String::new());
+            } else {
+                log::error!("Failed to get data: HTTP {}", response.status());
             }
         },
         Err(e) => {
@@ -186,43 +184,14 @@ async fn data_get(token: String) -> Database {
 }
 
 pub async fn login(login: web::Json<Login>) -> HttpResponse {  
-    let data = storage_get(login.email.clone()).await;
-    
-    if data == json!({"error": "Request failed"}) {
-        log::error!("Storage service request failed");
+    let (data , error) = get_token(login.clone()).await;
+    if error {
+        log::error!("{}" , data);
         return HttpResponse::InternalServerError().finish();
+    }else{
+        return HttpResponse::Ok().body("Login successful");
     }
 
-    if !data.is_array() || data.as_array().unwrap().is_empty() {
-        log::error!("No account found for email: {}", login.email);
-        return HttpResponse::Unauthorized().finish();
-    }
-    let account = &data[0];
-    
-    match account.get("password") {
-        Some(password_val) => {
-            let password = password_val.as_str().unwrap_or("");
-            if verify(login.password.clone() , password).unwrap_or(false) {
-                match account.get("token") {
-                    Some(token_val) => {
-                        let token = token_val.as_str().unwrap_or("");
-                        let data = data_get(token.to_string()).await;
-                        HttpResponse::Ok().json(data)
-                    },
-                    None => {
-                        log::error!("Token not found in account data");
-                        HttpResponse::InternalServerError().finish()
-                    }
-                }
-            } else {
-                HttpResponse::Unauthorized().finish()
-            }
-        },
-        None => {
-            log::error!("Password not found in account data");
-            HttpResponse::InternalServerError().finish()
-        }
-    }
 }
 
 pub async fn register(register: web::Json<Login>) -> HttpResponse {
@@ -271,4 +240,71 @@ async fn token_gen(token : String) -> String {
         }
     }).await;
     pass.lock().unwrap().clone()
+}
+
+pub async fn get_data(login: web::Json<Login>) -> HttpResponse {  
+    let (token , error) = get_token(login.clone()).await;
+    if error {
+        log::error!("{}", token);
+        return HttpResponse::InternalServerError().finish();
+    }
+    else {
+        let data = data_get(token.clone()).await;
+        if data.data.is_empty() {
+            log::error!("No data found for token: {}", token);
+            return HttpResponse::InternalServerError().finish();
+        }else{
+            let data: Vec<String> = data.data.split(',').map(|s| s.to_string()).collect();
+            let mut accounts = String::new();
+            for data in data {
+                let values : Vec<&str> = data.split(':').collect();
+                let account = Accounts {
+                    username: values[0].to_string(),
+                    website: values[1].to_string(),
+                };
+                accounts.push_str(&format!("Username: {}, Website: {}\n", account.username, account.website));
+            }
+            return HttpResponse::Ok().json(accounts);
+        }
+    }
+}
+
+//pub async fn add_data(data : web::Json<Data>) -> HttpResponse {
+//}
+
+pub async fn get_token(login : Login) -> (String , bool) {  
+    let data = storage_get(login.email.clone()).await;
+    
+    if data == json!({"error": "Request failed"}) {
+        log::error!("Storage service request failed");
+        return (String::from("Storage service request failed") , true);
+    }
+
+    if !data.is_array() || data.as_array().unwrap().is_empty() {
+        log::error!("No account found for email: {}", login.email);
+        return (String::from("No account found for email") , true);
+    }
+    let account = &data[0];
+    
+    match account.get("password") {
+        Some(password_val) => {
+            let password = password_val.as_str().unwrap_or("");
+            if verify(login.password.clone() , password).unwrap_or(false) {
+                match account.get("token") {
+                    Some(token_val) => {
+                        let token = token_val.to_string();
+                        (token , false)
+                    },
+                    None => {
+                        (String::from("Token not found in account data") , true)
+                    }
+                }
+            } else {
+                (String::from("Invalid password") , true)
+            }
+        },
+        None => {
+            (String::from("Password not found in account data") , true)
+        }
+    }
 }
