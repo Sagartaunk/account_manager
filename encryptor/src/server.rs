@@ -1,6 +1,6 @@
 use reqwest::Client;
 use serde_json::{json ,Value};
-use actix_web::{web, App, HttpServer , HttpResponse};
+use actix_web::{web , HttpResponse};
 use serde::{Deserialize, Serialize};
 use chrono::Local;
 use rand::{distributions::Alphanumeric, Rng};
@@ -8,7 +8,7 @@ use log;
 use aes_gcm::{self , KeyInit , aead::Aead};
 
 fn storage_ip() -> String {
-    let ip = String::from("http://192.168.1.100:51001");
+    let ip = String::from("http://10.0.0.238:51001");
     ip
 }
 fn storage_token() -> String {
@@ -16,7 +16,7 @@ fn storage_token() -> String {
     token
 }
 fn database_ip() -> String {
-    let ip = String::from("http://192.168.1.100:51000");
+    let ip = String::from("http://10.0.0.238:51000");
     ip
 }
 fn database_token() -> String {
@@ -83,6 +83,13 @@ async fn storage_get(email : String) -> Value {
 
 }
 async fn account_create(data: Data_register) {
+    let data = Data_register{
+        email: data.email,
+        password: bcrypt::hash(data.password, bcrypt::DEFAULT_COST).unwrap(),
+        date: data.date,
+        token: data.token,
+        account_type: data.account_type,
+    };
     let client = Client::new();
     let res1 = client.post(format!("{}/api/create", storage_ip()))
         .header("Authorization", storage_token())
@@ -193,7 +200,7 @@ pub async fn login(login: web::Json<Login>) -> HttpResponse {
     match account.get("password") {
         Some(password_val) => {
             let password = password_val.as_str().unwrap_or("");
-            if password == login.password {
+            if bcrypt::verify(login.password.clone() , password).unwrap_or(false) {
                 match account.get("token") {
                     Some(token_val) => {
                         let token = token_val.as_str().unwrap_or("");
@@ -226,6 +233,7 @@ pub async fn register(register: web::Json<Login>) -> HttpResponse {
         .map(char::from)
         .collect::<String>();
     
+    
     let data_register = Data_register {
         email,
         password,
@@ -236,22 +244,4 @@ pub async fn register(register: web::Json<Login>) -> HttpResponse {
     
     account_create(data_register).await;
     HttpResponse::Ok().finish()
-}
-
-fn encrypt(data : String) -> Vec<u8> {
-    let key = b"an example very very secret key."; // 32 bytes for AES-256
-    let nonce = b"unique nonce"; // 12 bytes for AES-GCM
-
-    let cipher = aes_gcm::Aes256Gcm::new(key.into());
-    let ciphertext = cipher.encrypt(nonce.into(), data.as_bytes()).expect("encryption failure!");
-
-    ciphertext
-}
-fn decrypt(ciphertext : Vec<u8>) -> String {
-    let key = b"an example very very secret key."; // 32 bytes for AES-256
-    let nonce = b"unique nonce"; // 12 bytes for AES-GCM    
-    let cipher = aes_gcm::Aes256Gcm::new(key.into());
-    let plaintext = cipher.decrypt(nonce.into(), ciphertext.as_ref()).expect("decryption failure!");
-
-    String::from_utf8(plaintext).expect("Invalid UTF-8 sequence")
 }
