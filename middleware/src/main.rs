@@ -1,5 +1,5 @@
 
-use encryptor::{middleware::Middleware , server::{login , register , get_data}};
+use encryptor::{middleware::Middleware , server::{login , register , get_data , add_data}};
 use actix_web::{web, App, HttpServer};
 use env_logger;
 use log;
@@ -22,6 +22,7 @@ async fn main() -> std::io::Result<()> {
             .route("/login", web::post().to(login))
             .route("/register" , web::post().to(register))
             .route("/get_data" , web::get().to(get_data))
+            .route("/add_data" , web::post().to(add_data))
     }).bind(bind_address)?
     .run()
     .await

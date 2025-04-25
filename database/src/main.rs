@@ -28,6 +28,7 @@ async fn main() -> std::io::Result<()> {
                     .wrap(Middleware)
                     .route("/create", web::post().to(create_data))
                     .route("/get" , web::post().to(get_data))
+                    .route("/add" , web::post().to(add_data))
             )
     }).bind(bind_address)?
     .run()
@@ -81,5 +82,21 @@ async fn create_data(data : web::Json<Data>) -> HttpResponse {
     match conn.execute("INSERT INTO data (TOKEN , DATA) VALUES (?1, ?2)" , (&data.token, &data.data)) {
         Ok(_) => HttpResponse::Ok().finish(),
         Err(_) => HttpResponse::InternalServerError().finish()
+    }
+}
+
+async fn add_data(data : web::Json<Data>) -> HttpResponse {
+    let conn = match rusqlite::Connection::open("data.db") {
+        Ok(conn) => conn,
+        Err(_) => {
+            File::create("data.db").unwrap();
+            rusqlite::Connection::open("data.db").unwrap()
+        }
+    };
+    match conn.execute("UPDATE data SET DATA = (?1) WHERE TOKEN = (?2)" , (&data.data, &data.token)) {
+        Ok(_) => HttpResponse::Ok().finish(),
+        Err(_) => {
+            log::error!("Failed to update data");
+            HttpResponse::InternalServerError().finish()}
     }
 }
