@@ -11,6 +11,8 @@ use std::sync::{Arc , Mutex};
 use aes_gcm::{Aes256Gcm , Key , Nonce , KeyInit , aead::Aead};
 use hex;
 
+
+//Contact information
 fn storage_ip() -> String {
     let ip = String::from("http://192.168.1.26:51001");
     ip
@@ -30,7 +32,7 @@ fn database_token() -> String {
 
 
 
-
+//Structs
 
 #[derive(Debug , Serialize , Deserialize , Clone)]
 pub struct Login {
@@ -77,6 +79,11 @@ pub struct Data {
     data : String
 }
 
+
+
+//Data Get Functions
+
+
 async fn storage_get(email : String) -> Value {
     let client = Client::new();
     let result;
@@ -97,6 +104,88 @@ async fn storage_get(email : String) -> Value {
     result
 
 }
+async fn data_get(token: String) -> Database {
+    let client = Client::new();
+    
+    let res = client.post(format!("{}/api/get", database_ip()))
+        .header("Authorization", database_token())
+        .header("Content-Type", "application/json")
+        .body(token.clone())
+        .send()
+        .await;
+    
+    let mut database = Database {
+        token: token.clone(), 
+        data: String::new(),
+    };
+    match res {
+        Ok(response) => {
+            if response.status().is_success() {
+                let body: Value = response.json().await.unwrap();
+                if let Some(data) = body.get(0).and_then(|item| item.get("DATA")).and_then(|item| item.as_str()){
+                    database.data = data.to_string();
+                    log::info!("Data: {}", database.data);
+                } else {
+                    database.data = String::new();
+                    log::error!("No data found for token: {}", token);
+                }
+            } else {
+                log::error!("Failed to get data: HTTP {}", response.status());
+            }
+        },
+        Err(e) => {
+            log::error!("Error: {}", e);
+        }
+    }
+    
+    database
+}
+
+
+pub async fn get_token(login : Login) -> (String , bool) {  
+    let data = storage_get(login.email.clone()).await;
+    
+    if data == json!({"error": "Request failed"}) {
+        log::error!("Storage service request failed");
+        return (String::from("Storage service request failed") , true);
+    }
+
+    if !data.is_array() || data.as_array().unwrap().is_empty() {
+        log::error!("No account found for email: {}", login.email);
+        return (String::from("No account found for email") , true);
+    }
+    let account = &data[0];
+    
+    match account.get("password") {
+        Some(password_val) => {
+            let password = password_val.as_str().unwrap_or("");
+            if verify(login.password.clone() , password).unwrap_or(false) {
+                match account.get("token") {
+                    Some(token_val) => {
+                        let token = token_val.to_string();
+                        (token , false)
+                    },
+                    None => {
+                        (String::from("Token not found in account data") , true)
+                    }
+                }
+            } else {
+                (String::from("Invalid password") , true)
+            }
+        },
+        None => {
+            (String::from("Password not found in account data") , true)
+        }
+    }
+}
+
+
+
+
+
+//Account Create Functions
+
+
 async fn account_create(data: Data_register) {
     let data = Data_register{
         email: data.email,
@@ -155,72 +244,8 @@ async fn account_create(data: Data_register) {
     }
 }
 
-async fn data_get(token: String) -> Database {
-    let client = Client::new();
-    
-    let res = client.post(format!("{}/api/get", database_ip()))
-        .header("Authorization", database_token())
-        .header("Content-Type", "application/json")
-        .body(token.clone())
-        .send()
-        .await;
-    
-    let mut database = Database {
-        token: token.clone(), 
-        data: String::new(),
-    };
-    match res {
-        Ok(response) => {
-            if response.status().is_success() {
-                let body: Value = response.json().await.unwrap();
-                if let Some(data) = body.get(0).and_then(|item| item.get("DATA")).and_then(|item| item.as_str()){
-                    database.data = data.to_string();
-                    log::info!("Data: {}", database.data);
-                } else {
-                    database.data = String::new();
-                    log::error!("No data found for token: {}", token);
-                }
-            } else {
-                log::error!("Failed to get data: HTTP {}", response.status());
-            }
-        },
-        Err(e) => {
-            log::error!("Error: {}", e);
-        }
-    }
-    
-    database
-}
 
-pub async fn login(login: web::Json<Login>) -> HttpResponse {  
-    let (data , error) = get_token(login.clone()).await;
-    if error {
-        log::error!("{}" , data);
-        return HttpResponse::InternalServerError().finish();
-    }else{
-        return HttpResponse::Ok().body("Login successful");
-    }
 
-}
-
-pub async fn register(register: web::Json<Login>) -> HttpResponse {
-    let email = register.email.clone();
-    let password = register.password.clone();
-    let date = Local::now().date_naive().to_string();
-    let token = token_gen(generator()).await;
-    
-    
-    let data_register = Data_register {
-        email,
-        password,
-        date,
-        token: token.clone(),
-        account_type: "user".to_string(),
-    };
-    
-    account_create(data_register).await;
-    HttpResponse::Ok().finish()
-}
 fn generator() -> String {
     let token = rand::thread_rng()
         .sample_iter(&Alphanumeric)
@@ -251,34 +276,78 @@ async fn token_gen(token : String) -> String {
     pass.lock().unwrap().clone()
 }
 
-pub async fn get_data(login: web::Json<Login>) -> HttpResponse {  
-    let (token , error) = get_token(login.clone()).await;
-    match error {
-        true => {
-            log::error!("{}", token);
-            return HttpResponse::InternalServerError().finish();
-        },
-        false => {
-            log::info!("Running get_data");
-        let data = data_get(token.clone()).await;
-        if data.data.is_empty() {
-            log::error!("No data found for token: {}", token);
-            return HttpResponse::InternalServerError().body("No data found");
-        }else{
-            let data: Vec<String> = data.data.split(',').map(|s| s.to_string()).collect();
-            let mut accounts = String::new();
-            for data in data {
-                let values : Vec<&str> = data.split(':').collect();
-                let account = Accounts {
-                    username: values[0].to_string(),
-                    website: values[1].to_string(),
-                };
-                accounts.push_str(&format!("Username: {}, Website: {}\n", account.username, account.website));
-            }
-            return HttpResponse::Ok().json(accounts);
-        }
+
+
+
+
+//Encryption and Decryption Functions
+
+fn encrypt(key : String , data : String) -> String {
+    let key = key_gen(key);
+    let key = Key::<Aes256Gcm>::from_slice(&key);
+    let cipher = Aes256Gcm::new(&key);
+    let nonce = Nonce::from_slice(b"unique nonce"); 
+    let ciphertext = cipher.encrypt(nonce, data.as_bytes()).expect("encryption failure!");
+    hex::encode(ciphertext)
+}
+fn decrypt(key : String , data : String) -> String {
+    let key = key_gen(key);
+    let key = Key::<Aes256Gcm>::from_slice(&key);
+    let data = hex::decode(data).expect("Failed to decode hex");
+    let cipher = Aes256Gcm::new(&key);
+    let nonce = Nonce::from_slice(b"unique nonce");
+    let plaintext = cipher.decrypt(nonce, data.as_ref()).expect("decryption failure!");
+    String::from_utf8(plaintext).expect("Failed to convert to string")
+}
+
+fn key_gen(k : String) -> [u8 ; 32] {
+    let k = k.as_bytes();
+    let mut k1 = [0u8; 32];
+    for i in 0..32 {
+        k1[i] = k[i % k.len()];
     }
+    k1
+}
+
+
+
+
+
+
+
+
+//API Functions
+
+
+
+pub async fn login(login: web::Json<Login>) -> HttpResponse {  
+    let (data , error) = get_token(login.clone()).await;
+    if error {
+        log::error!("{}" , data);
+        return HttpResponse::InternalServerError().finish();
+    }else{
+        return HttpResponse::Ok().body("Login successful");
     }
+
+}
+
+pub async fn register(register: web::Json<Login>) -> HttpResponse {
+    let email = register.email.clone();
+    let password = register.password.clone();
+    let date = Local::now().date_naive().to_string();
+    let token = token_gen(generator()).await;
+    
+    
+    let data_register = Data_register {
+        email,
+        password,
+        date,
+        token: token.clone(),
+        account_type: "user".to_string(),
+    };
+    
+    account_create(data_register).await;
+    HttpResponse::Ok().finish()
 }
 
 pub async fn add_data(data : web::Json<Data>) -> HttpResponse {
@@ -331,65 +400,35 @@ pub async fn add_data(data : web::Json<Data>) -> HttpResponse {
     }    
 }
 
-pub async fn get_token(login : Login) -> (String , bool) {  
-    let data = storage_get(login.email.clone()).await;
-    
-    if data == json!({"error": "Request failed"}) {
-        log::error!("Storage service request failed");
-        return (String::from("Storage service request failed") , true);
-    }
 
-    if !data.is_array() || data.as_array().unwrap().is_empty() {
-        log::error!("No account found for email: {}", login.email);
-        return (String::from("No account found for email") , true);
-    }
-    let account = &data[0];
-    
-    match account.get("password") {
-        Some(password_val) => {
-            let password = password_val.as_str().unwrap_or("");
-            if verify(login.password.clone() , password).unwrap_or(false) {
-                match account.get("token") {
-                    Some(token_val) => {
-                        let token = token_val.to_string();
-                        (token , false)
-                    },
-                    None => {
-                        (String::from("Token not found in account data") , true)
-                    }
-                }
-            } else {
-                (String::from("Invalid password") , true)
-            }
+
+pub async fn get_data(login: web::Json<Login>) -> HttpResponse {  
+    let (token , error) = get_token(login.clone()).await;
+    match error {
+        true => {
+            log::error!("{}", token);
+            return HttpResponse::InternalServerError().finish();
         },
-        None => {
-            (String::from("Password not found in account data") , true)
+        false => {
+            log::info!("Running get_data");
+        let data = data_get(token.clone()).await;
+        if data.data.is_empty() {
+            log::error!("No data found for token: {}", token);
+            return HttpResponse::InternalServerError().body("No data found");
+        }else{
+            let data: Vec<String> = data.data.split(',').map(|s| s.to_string()).collect();
+            let mut accounts = String::new();
+            for data in data {
+                let values : Vec<&str> = data.split(':').collect();
+                let account = Accounts {
+                    username: values[0].to_string(),
+                    website: values[1].to_string(),
+                };
+                accounts.push_str(&format!("Username: {}, Website: {}\n", account.username, account.website));
+            }
+            return HttpResponse::Ok().json(accounts);
         }
     }
-}
-fn encrypt(key : String , data : String) -> String {
-    let key = key_gen(key);
-    let key = Key::<Aes256Gcm>::from_slice(&key);
-    let cipher = Aes256Gcm::new(&key);
-    let nonce = Nonce::from_slice(b"unique nonce"); 
-    let ciphertext = cipher.encrypt(nonce, data.as_bytes()).expect("encryption failure!");
-    hex::encode(ciphertext)
-}
-fn decrypt(key : String , data : String) -> String {
-    let key = key_gen(key);
-    let key = Key::<Aes256Gcm>::from_slice(&key);
-    let data = hex::decode(data).expect("Failed to decode hex");
-    let cipher = Aes256Gcm::new(&key);
-    let nonce = Nonce::from_slice(b"unique nonce");
-    let plaintext = cipher.decrypt(nonce, data.as_ref()).expect("decryption failure!");
-    String::from_utf8(plaintext).expect("Failed to convert to string")
+    }
 }
 
-fn key_gen(k : String) -> [u8 ; 32] {
-    let k = k.as_bytes();
-    let mut k1 = [0u8; 32];
-    for i in 0..32 {
-        k1[i] = k[i % k.len()];
-    }
-    k1
-}
