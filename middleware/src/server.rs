@@ -12,7 +12,7 @@ use aes_gcm::{Aes256Gcm , Key , Nonce , KeyInit , aead::Aead};
 use hex;
 
 fn storage_ip() -> String {
-    let ip = String::from("http://10.0.0.61:51001");
+    let ip = String::from("http://192.168.1.26:51001");
     ip
 }
 fn storage_token() -> String {
@@ -20,7 +20,7 @@ fn storage_token() -> String {
     token
 }
 fn database_ip() -> String {
-    let ip = String::from("http://10.0.0.61:51000");
+    let ip = String::from("http://192.168.1.26:51000");
     ip
 }
 fn database_token() -> String {
@@ -173,7 +173,7 @@ async fn data_get(token: String) -> Database {
         Ok(response) => {
             if response.status().is_success() {
                 let body: Value = response.json().await.unwrap();
-                if let Some(data) = body.get(0).and_then(|item| item.get("data")).and_then(|item| item.as_str()){
+                if let Some(data) = body.get(0).and_then(|item| item.get("DATA")).and_then(|item| item.as_str()){
                     database.data = data.to_string();
                     log::info!("Data: {}", database.data);
                 } else {
