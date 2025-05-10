@@ -83,25 +83,37 @@ pub struct Data {
 //Data Get Functions
 
 
-async fn storage_get(email : String) -> Value {
+async fn storage_get(email: String) -> Value {
     let client = Client::new();
     let result;
-    let res = client.post(format!("{}/api/get" , storage_ip())).header("Authorization" , storage_token()).header("Content-Type" , "application/json").body(format!("\"{}\"", email)).send().await;
+    let res = client.post(format!("{}/api/get", storage_ip()))
+        .header("Authorization", storage_token())
+        .header("Content-Type", "application/json")
+        .json(&email)  
+        .send()
+        .await;
+    
     match res {
         Ok(response) => {
             if response.status().is_success() {
-                let body : Value = response.json().await.unwrap();
-                result = body
+                match response.json::<Value>().await {
+                    Ok(body) => result = body,
+                    Err(e) => {
+                        log::error!("Failed to parse response: {}", e);
+                        result = json!({"error": "Failed to parse response"});
+                    }
+                }
             } else {
+                log::error!("Request failed with status: {}", response.status());
                 result = json!({"error": "Request failed"});
             }
         },
-        Err(_) => {
+        Err(e) => {
+            log::error!("Request error: {}", e);
             result = json!({"error": "Request failed"})
         }
     }
     result
-
 }
 async fn data_get(token: String) -> Database {
     let client = Client::new();
@@ -413,7 +425,7 @@ pub async fn add_data(data : web::Json<Data>) -> HttpResponse {
 
 
 pub async fn get_data(login: web::Json<Login>) -> HttpResponse {  
-    let (token , error) = get_token(login.clone()).await;
+    let (token, error) = get_token(login.clone()).await;
     match error {
         true => {
             log::error!("{}", token);
@@ -421,50 +433,67 @@ pub async fn get_data(login: web::Json<Login>) -> HttpResponse {
         },
         false => {
             log::info!("Running get_data");
-        let data = data_get(token.clone()).await;
-        if data.data.is_empty() {
-            log::error!("No data found for token: {}", token);
-            return HttpResponse::InternalServerError().body("No data found");
-        }else{
-            let data: Vec<String> = data.data.split(',').map(|s| s.to_string()).collect();
-            let mut accounts = String::new();
-            for data in data {
-                let values : Vec<&str> = data.split(':').collect();
-                let account = Accounts {
-                    username: values[0].to_string(),
-                    website: values[1].to_string(),
-                };
-                accounts.push_str(&format!("Username: {}, Website: {}\n", account.username, account.website));
+            let data = data_get(token.clone()).await;
+            if data.data.is_empty() {
+                log::error!("No data found for token: {}", token);
+                return HttpResponse::InternalServerError().body("No data found");
+            } else {
+                
+                let data_entries: Vec<String> = data.data.split(',')
+                                        .filter(|s| !s.is_empty())
+                                        .map(|s| s.to_string())
+                                        .collect();
+                let mut accounts = String::new();
+                for entry in data_entries {
+                    let values: Vec<&str> = entry.split(':').collect();
+                    if values.len() >= 2 {
+                        let account = Accounts {
+                            username: values[0].to_string(),
+                            website: values[1].to_string(),
+                        };
+                        accounts.push_str(&format!("Username: {}, Website: {}\n", account.username, account.website));
+                    } else {
+                        log::warn!("Skipping malformed data entry: {}", entry);
+                    }
+                }
+                return HttpResponse::Ok().json(accounts);
             }
-            return HttpResponse::Ok().json(accounts);
         }
-    }
     }
 }
 
 //Admin Functions
-pub async fn admin_get_accounts() -> (bool , String) {
+pub async fn admin_get_accounts() -> (bool, String) {
+    log::info!("Calling admin function");
     let client = Client::new();
     let res = client.post(format!("{}/api/admin_get_tokens", storage_ip()))
         .header("Authorization", storage_token())
         .header("Content-Type", "application/json")
-        .body("".to_string())
+        .body("\"\"".to_string())
         .send()
         .await;
     
     match res {
         Ok(response) => {
             if response.status().is_success() {
-                let body: Value = response.json().await.unwrap();
-                (false , body.to_string() )
+                match response.json::<Value>().await {
+                    Ok(body) => {
+                        log::info!("Received tokens successfully");
+                        (false, body.to_string())
+                    },
+                    Err(e) => {
+                        log::error!("Failed to parse response: {}", e);
+                        (true, String::from("Failed to parse response"))
+                    }
+                }
             } else {
                 log::error!("Failed to get accounts: HTTP {}", response.status());
-                (true , String::from("Failed to get accounts"))
+                (true, format!("Failed to get accounts: HTTP {}", response.status()))
             }
         },
         Err(e) => {
             log::error!("Error: {}", e);
-            (true , String::from("Error: Failed to get accounts"))
+            (true, format!("Error: {}", e))
         }
     }
 }

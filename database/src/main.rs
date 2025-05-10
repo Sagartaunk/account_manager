@@ -34,26 +34,26 @@ async fn main() -> std::io::Result<()> {
     .run()
     .await
 }
-fn rem_first_and_last(value: &str) -> &str {
-    let mut chars = value.chars();
-    chars.next();
-    chars.next_back();
-    chars.as_str()
-}
 
 async fn get_data(token: web::Json<String>) -> HttpResponse {
     let conn = match rusqlite::Connection::open("data.db") {
         Ok(conn) => conn,
-        Err(_) => {
-            File::create("data.db").unwrap();
-            rusqlite::Connection::open("data.db").unwrap()
+        Err(e) => {
+            log::error!("Failed to open database: {}", e);
+            return HttpResponse::InternalServerError().body("Database connection error");
         }
     };
-    let token = rem_first_and_last(token.as_str()).to_string();
+    
+
+    let token = token.trim_matches('"').to_string();
+    log::debug!("Processing token: {}", token);
     
     let mut stmt = match conn.prepare("SELECT DATA FROM data WHERE TOKEN = (?1)") {
         Ok(stmt) => stmt,
-        Err(_) => return HttpResponse::InternalServerError().finish(),
+        Err(e) => {
+            log::error!("SQL prepare error: {}", e);
+            return HttpResponse::InternalServerError().body("SQL preparation error");
+        }
     };
 
     let result: Vec<String> = match stmt.query_map([token.as_str()], |row| {
@@ -67,17 +67,21 @@ async fn get_data(token: web::Json<String>) -> HttpResponse {
                     Ok(data) => datas.push(data),
                     Err(e) => {
                         log::error!("Error retrieving data: {}", e);
-                        return HttpResponse::InternalServerError().body(format!("Error: {}", e))},
+                        return HttpResponse::InternalServerError().body(format!("Error: {}", e));
+                    }
                 }
             }
             datas
         }
-        Err(_) => return HttpResponse::InternalServerError().finish(),
+        Err(e) => {
+            log::error!("Query error: {}", e);
+            return HttpResponse::InternalServerError().body("Query execution error");
+        }
     };
-    log::info!("Data for token {}: {:?}", token.clone(), result.clone()); // Log the data for the token
+    
+    log::info!("Data for token {}: {:?}", token, result);
     HttpResponse::Ok().json(result)
 }
-
 async fn create_data(data : web::Json<Data>) -> HttpResponse {
     let conn = match rusqlite::Connection::open("data.db") {
         Ok(conn) => conn,
@@ -112,14 +116,14 @@ async fn add_data(data: web::Json<Data>) -> HttpResponse {
             return HttpResponse::InternalServerError().body("Failed to connect to the database");
         }
     };
-
-    match conn.execute("UPDATE data SET DATA = (?1) WHERE TOKEN = (?2)", (&data.data, &data.token)) {
+    let token = data.token.trim_matches('"').to_string();
+    match conn.execute("UPDATE data SET DATA = (?1) WHERE TOKEN = (?2)", (&data.data, &token)) {
         Ok(rows_updated) => {
             if rows_updated == 0 {
-                log::warn!("No rows updated. Token {} not found.", data.token);
+                log::warn!("No rows updated. Token {} not found.", token);
                 HttpResponse::NotFound().body("Token not found")
             } else {
-                log::info!("Data updated for token starting with {}", &data.token[..5]);
+                log::info!("Data updated for token starting with {}", &token[..5]);
                 HttpResponse::Ok().finish()
             }
         }
