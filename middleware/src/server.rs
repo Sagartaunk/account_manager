@@ -2,19 +2,18 @@ use reqwest::Client;
 use serde_json::{json ,Value};
 use actix_web::{web , HttpResponse};
 use serde::{Deserialize, Serialize};
-use chrono::{format, Local};
+use chrono::Local;
 use rand::{distributions::Alphanumeric, Rng};
 use log;
 use bcrypt::{verify  , hash , DEFAULT_COST };
-use std::pin::Pin;
-use std::sync::{Arc , Mutex};
 use aes_gcm::{Aes256Gcm , Key , Nonce , KeyInit , aead::Aead};
 use hex;
+use rayon::prelude::*;
 
 
 //Contact information
 fn storage_ip() -> String {
-    let ip = String::from("http://192.168.1.26:51001");
+    let ip = String::from("http://192.168.1.10:51001");
     ip
 }
 fn storage_token() -> String {
@@ -22,7 +21,7 @@ fn storage_token() -> String {
     token
 }
 fn database_ip() -> String {
-    let ip = String::from("http://192.168.1.26:51000");
+    let ip = String::from("http://192.168.1.10:51000");
     ip
 }
 fn database_token() -> String {
@@ -106,8 +105,9 @@ async fn storage_get(email : String) -> Value {
 }
 async fn data_get(token: String) -> Database {
     let client = Client::new();
-    
-    let res = client.post(format!("{}/api/get", database_ip()))
+    let url = format!("{}/api/get", database_ip());
+    log::info!("URL : {} , Token : {}" , url.clone(), token.clone()); //Ment for testing to be removed 
+    let res = client.post(url)
         .header("Authorization", database_token())
         .header("Content-Type", "application/json")
         .body(token.clone())
@@ -122,7 +122,7 @@ async fn data_get(token: String) -> Database {
         Ok(response) => {
             if response.status().is_success() {
                 let body: Value = response.json().await.unwrap();
-                if let Some(data) = body.get(0).and_then(|item| item.get("DATA")).and_then(|item| item.as_str()){
+                if let Some(data) = body.get(0).and_then(|item| item.as_str()) {
                     database.data = data.to_string();
                     log::info!("Data: {}", database.data);
                 } else {
@@ -246,6 +246,13 @@ async fn account_create(data: Data_register) {
 
 
 
+
+
+
+
+//UTILITY FUNCTIONS
+
+
 fn generator() -> String {
     let token = rand::thread_rng()
         .sample_iter(&Alphanumeric)
@@ -254,33 +261,6 @@ fn generator() -> String {
         .collect::<String>();
     token
 }
-
-async fn token_gen(token : String) -> String {
-    let mut pass = Arc::new(Mutex::new(String::new()));
-    let token = Arc::new(Mutex::new(token));
-    Box::pin(async{  
-        let client = Client::new();
-        let res = client.post(format!("{}/api/get", database_ip()))
-            .header("Authorization", database_token())
-            .header("Content-Type", "application/json")
-            .body(format!("\"{}\"", token.lock().unwrap().clone()))
-            .send()
-            .await;
-        let mut pass = pass.lock().unwrap();
-        if res.unwrap().status().is_success() {
-            pass.push_str(token_gen(generator()).await.as_str());
-        }else {
-            pass.push_str(token.lock().unwrap().clone().as_str());
-        }
-    }).await;
-    pass.lock().unwrap().clone()
-}
-
-
-
-
-
-//Encryption and Decryption Functions
 
 fn encrypt(key : String , data : String) -> String {
     let key = key_gen(key);
@@ -309,6 +289,32 @@ fn key_gen(k : String) -> [u8 ; 32] {
     k1
 }
 
+async fn token_gen() -> (bool , String) {
+    let mut token = String::new();
+    let mut found = true;
+    let (error , data) = admin_get_accounts().await;
+    if error {
+        log::error!("Failed to get accounts");
+        return (true , String::new());        
+    }
+    let tokens : Vec<&str> = data.split(" ").collect::<Vec<&str>>();
+    while found {
+        let gene = generator();
+        token = gene.clone();
+        found = checker(gene , tokens.clone()).await;       
+    }
+    (true , token)
+}
+
+async fn checker(token : String , list : Vec<&str>) -> bool {
+    if list.par_iter().any(|x| x == &token){
+        true
+    }
+    else {
+        false
+    }
+}
+
 
 
 
@@ -335,7 +341,11 @@ pub async fn register(register: web::Json<Login>) -> HttpResponse {
     let email = register.email.clone();
     let password = register.password.clone();
     let date = Local::now().date_naive().to_string();
-    let token = token_gen(generator()).await;
+    let  (error , mut token) = token_gen().await;
+    if error {
+        log::error!("Failed to fetch tokens");
+        token = generator();
+    }
     
     
     let data_register = Data_register {
@@ -432,3 +442,29 @@ pub async fn get_data(login: web::Json<Login>) -> HttpResponse {
     }
 }
 
+//Admin Functions
+pub async fn admin_get_accounts() -> (bool , String) {
+    let client = Client::new();
+    let res = client.post(format!("{}/api/admin_get_tokens", storage_ip()))
+        .header("Authorization", storage_token())
+        .header("Content-Type", "application/json")
+        .body("".to_string())
+        .send()
+        .await;
+    
+    match res {
+        Ok(response) => {
+            if response.status().is_success() {
+                let body: Value = response.json().await.unwrap();
+                (false , body.to_string() )
+            } else {
+                log::error!("Failed to get accounts: HTTP {}", response.status());
+                (true , String::from("Failed to get accounts"))
+            }
+        },
+        Err(e) => {
+            log::error!("Error: {}", e);
+            (true , String::from("Error: Failed to get accounts"))
+        }
+    }
+}

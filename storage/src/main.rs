@@ -32,6 +32,7 @@ async fn main() -> std::io::Result<()> {
                     .wrap(Middleware)
                     .route("/create", web::post().to(create_data))
                     .route("/get" , web::post().to(get_data))
+                    .route("/admin_get_tokens" , web::post().to(admin_get_tokens))
             )
     }).bind(bind_address)?
     .run()
@@ -89,8 +90,55 @@ async fn create_data(account : web::Json<Account>) -> HttpResponse {
     };
     conn.execute("CREATE TABLE IF NOT EXISTS accounts (email TEXT NOT NULL, password TEXT NOT NULL , Creation TEXT NOT NULL, TOKEN  PRIMARY KEY , Type TEXT NOT NULL )" , ()).unwrap();
     match conn.execute("INSERT INTO accounts (email, password, Creation, TOKEN, Type) VALUES (?1, ?2, ?3, ?4, ?5)" , (&account.email, &account.password, &account.date, &account.token, &account.account_type)) {
-        Ok(_) => HttpResponse::Ok().finish(),
-        Err(_) => HttpResponse::InternalServerError().finish()
+        Ok(rows_updated) => {
+            if rows_updated == 0 {
+                log::warn!("Failed to create account for {}", account.token);
+                HttpResponse::NotFound().body("Failed to create account")
+            } else {
+                log::info!("Succesfully created account for {} ", &account.token[..5]);
+                HttpResponse::Ok().finish()
+            }
+        }
+        Err(e) => {
+            log::error!("Failed to update data: {}", e);
+            HttpResponse::InternalServerError().body(format!("Database error: {}", e))
+        }
     }
 }
 
+async fn admin_get_tokens(_ : web::Json<String>) -> HttpResponse {
+    let conn = match rusqlite::Connection::open("accounts.db") {
+        Ok(conn) => conn,
+        Err(_) => {
+            File::create("accounts.db").unwrap();
+            rusqlite::Connection::open("accounts.db").unwrap()
+        }
+    };
+    
+    let mut stmt = match conn.prepare("SELECT TOKEN FROM accounts") {
+        Ok(stmt) => stmt,
+        Err(_) => return HttpResponse::InternalServerError().finish(),
+    };
+
+    let result: Vec<String> = match stmt.query_map([], |row| {
+        let token: String = row.get(0)?;
+        Ok(token)
+    }) {
+        Ok(mapped_rows) => {
+            let mut tokens = Vec::new();
+            for row in mapped_rows {
+                match row {
+                    Ok(token) => tokens.push(token),
+                    Err(_) => return HttpResponse::InternalServerError().finish(),
+                }
+            }
+            tokens
+        }
+        Err(_) => return HttpResponse::InternalServerError().finish(),
+    };
+    let mut res : String = String::new();
+    for to_add in  result.iter() {
+        res = res + &format!("{} " , to_add);        
+    }
+    HttpResponse::Ok().json(res)
+}
