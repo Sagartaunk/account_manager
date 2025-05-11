@@ -1,5 +1,5 @@
 
-use middleware::{middleware::Middleware , server::{login , register , get_data , add_data , get_password}};
+use middleware::{middleware::Middleware , server::{login , register , get_data , add_data , get_password , load_dates}};
 use actix_web::{web, App, HttpServer};
 use env_logger;
 use log;
@@ -17,6 +17,7 @@ async fn main() -> std::io::Result<()> {
             .service(
                 web::scope("/api")
                     .wrap(Middleware)
+                    .route("/admin_get_dates" , web::post().to(load_dates))
 
             )
             .route("/login", web::post().to(login))

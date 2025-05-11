@@ -126,7 +126,6 @@ async fn storage_get(email: String) -> Value {
 async fn data_get(token: String) -> Database {
     let client = Client::new();
     let url = format!("{}/api/get", database_ip());
-    log::info!("URL : {} , Token : {}" , url.clone(), token.clone()); //Ment for testing to be removed 
     let res = client.post(url)
         .header("Authorization", database_token())
         .header("Content-Type", "application/json")
@@ -527,7 +526,7 @@ pub async fn get_password(request : web::Json<GetPass>) -> HttpResponse {
 
 //Admin Functions
 pub async fn admin_get_accounts() -> (bool, String) {
-    log::info!("Calling admin function");
+    log::info!("System called admin function");
     let client = Client::new();
     let res = client.post(format!("{}/api/admin_get_tokens", storage_ip()))
         .header("Authorization", storage_token())
@@ -559,4 +558,38 @@ pub async fn admin_get_accounts() -> (bool, String) {
             (true, format!("Error: {}", e))
         }
     }
+}
+
+pub async fn load_dates(username : web::Json<String>) -> HttpResponse {
+    log::info!("Admin : {} called an admin function" , username.to_string() );
+    let client = Client::new();
+    let res = client.post(format!("{}/api/admin_get_dates" , storage_ip()))
+        .header("Authorization" , storage_token())
+        .header("Content-Type" , "application/json")
+        .send()
+        .await;
+    match res {
+        Ok(response) => {
+            if response.status().is_success() {
+                match response.json::<Value>().await {
+                    Ok(body) => {
+                        log::info!("Received Dates successfully");
+                        return HttpResponse::Ok().body(body.to_string());
+                    },
+                    Err(e) => {
+                        log::error!("Failed to parse response: {}", e);
+                        return HttpResponse::InternalServerError().body("Failed to parse response");
+                    }
+                }
+            } else {
+                log::error!("Failed to get Dates: HTTP {}", response.status());
+                return HttpResponse::InternalServerError().finish();
+            }
+        },
+        Err(e) => {
+            log::error!("Error: {}", e);
+            return HttpResponse::InternalServerError().finish();
+        }
+    }
+
 }

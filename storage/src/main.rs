@@ -33,6 +33,7 @@ async fn main() -> std::io::Result<()> {
                     .route("/create", web::post().to(create_data))
                     .route("/get" , web::post().to(get_data))
                     .route("/admin_get_tokens" , web::post().to(admin_get_tokens))
+                    .route("/admin_get_dates" , web::post().to(admin_get_dates)) 
             )
     }).bind(bind_address)?
     .run()
@@ -148,5 +149,49 @@ async fn admin_get_tokens(_ : web::Json<String>) -> HttpResponse {
     };
     
     log::info!("Retrieved {} tokens", result.len());
+    HttpResponse::Ok().json(result)
+}
+
+async fn admin_get_dates() -> HttpResponse {
+    let conn = match rusqlite::Connection::open("accounts.db") {
+        Ok(conn) => conn,
+        Err(_) => {
+            File::create("accounts.db").unwrap();
+            rusqlite::Connection::open("accounts.db").unwrap()
+        }
+    };
+    
+    let mut stmt = match conn.prepare("SELECT Creation FROM accounts") {
+        Ok(stmt) => stmt,
+        Err(e) => {
+            log::error!("SQL prepare error: {}", e);
+            return HttpResponse::InternalServerError().finish();
+        },
+    };
+
+    let result: Vec<String> = match stmt.query_map([], |row| {
+        let date: String = row.get(0)?;
+        Ok(date)
+    }) {
+        Ok(mapped_rows) => {
+            let mut dates = Vec::new();
+            for row in mapped_rows {
+                match row {
+                    Ok(date) => dates.push(date),
+                    Err(e) => {
+                        log::error!("Error mapping row: {}", e);
+                        return HttpResponse::InternalServerError().finish();
+                    }
+                }
+            }
+            dates
+        }
+        Err(e) => {
+            log::error!("Query error: {}", e);
+            return HttpResponse::InternalServerError().finish();
+        },
+    };
+    
+    log::info!("Retrieved {} dates", result.len());
     HttpResponse::Ok().json(result)
 }
