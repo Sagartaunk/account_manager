@@ -13,7 +13,7 @@ use rayon::prelude::*;
 
 //Contact information
 fn storage_ip() -> String {
-    let ip = String::from("http://192.168.1.10:51001");
+    let ip = String::from("http://192.168.0.32:51001");
     ip
 }
 fn storage_token() -> String {
@@ -21,7 +21,7 @@ fn storage_token() -> String {
     token
 }
 fn database_ip() -> String {
-    let ip = String::from("http://192.168.1.10:51000");
+    let ip = String::from("http://192.168.0.32:51000");
     ip
 }
 fn database_token() -> String {
@@ -76,6 +76,14 @@ pub struct Data {
     email : String, 
     password : String,
     data : String
+}
+#[derive(Debug , Serialize , Deserialize , Clone)]
+pub struct GetPass {
+    email : String , 
+    master_password : String , 
+    username : String , 
+    website : String 
+
 }
 
 
@@ -432,10 +440,8 @@ pub async fn get_data(login: web::Json<Login>) -> HttpResponse {
             return HttpResponse::InternalServerError().finish();
         },
         false => {
-            log::info!("Running get_data");
             let data = data_get(token.clone()).await;
             if data.data.is_empty() {
-                log::error!("No data found for token: {}", token);
                 return HttpResponse::InternalServerError().body("No data found");
             } else {
                 
@@ -461,6 +467,63 @@ pub async fn get_data(login: web::Json<Login>) -> HttpResponse {
         }
     }
 }
+
+pub async fn get_password(request : web::Json<GetPass>) -> HttpResponse {
+    let login = Login {
+        email : request.email.clone(),
+        password : request.master_password.clone()
+    };
+    let (token, error) = get_token(login.clone()).await;
+    match error {
+        true => {
+            log::error!("{}", token);
+            return HttpResponse::InternalServerError().finish();
+        },
+        false => {
+            let data = data_get(token.clone()).await;
+            if data.data.is_empty() {
+                return HttpResponse::InternalServerError().body("No data found");
+            } else {
+                
+                let data_entries: Vec<String> = data.data.split(',')
+                                        .filter(|s| !s.is_empty())
+                                        .map(|s| s.to_string())
+                                        .collect();
+                
+                for entry in data_entries {
+                    let values: Vec<&str> = entry.split(':').collect();
+                    if values.len() >= 3 {
+                        let account = Account {
+                            username: values[0].to_string(),
+                            website: values[1].to_string(),
+                            password : decrypt(token.clone(), values[2].to_string())
+                        };
+                        if account.username == request.username.clone() && account.website == request.website.clone() {
+                            return HttpResponse::Ok().json(json!({
+                                "username": account.username,
+                                "website": account.website,
+                                "password": account.password
+                            }));
+                        }
+                    } else {
+                        log::warn!("Skipping malformed data entry: {}", entry);
+                    }
+                }
+                return HttpResponse::NotFound().json(json!({
+                    "error": "No matching account found"
+                }));
+            }
+        }
+    }
+}
+
+
+
+
+
+
+
+
 
 //Admin Functions
 pub async fn admin_get_accounts() -> (bool, String) {
