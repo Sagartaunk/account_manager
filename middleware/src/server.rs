@@ -40,14 +40,14 @@ pub struct Login {
 
 }
 #[derive(Debug , Serialize , Deserialize , Clone)]
-pub struct Data_login {
+pub struct DataLogin {
     pub email : String,
     pub password : String,
     pub token : String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Data_register {
+pub struct DataRegister {
     pub email: String,
     pub password: String,
     pub date: String,
@@ -205,8 +205,8 @@ pub async fn get_token(login : Login) -> (String , bool) {
 //Account Create Functions
 
 
-async fn account_create(data: Data_register) {
-    let data = Data_register{
+async fn account_create(data: DataRegister) {
+    let data = DataRegister{
         email: data.email,
         password: hash(data.password, DEFAULT_COST).unwrap(),
         date: data.date,
@@ -367,7 +367,7 @@ pub async fn register(register: web::Json<Login>) -> HttpResponse {
     }
     
     
-    let data_register = Data_register {
+    let data_register = DataRegister {
         email,
         password,
         date,
