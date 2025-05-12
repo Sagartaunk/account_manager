@@ -9,14 +9,15 @@ use bcrypt::{verify  , hash , DEFAULT_COST };
 use aes_gcm::{Aes256Gcm , Key , Nonce , KeyInit , aead::Aead};
 use hex;
 use rayon::prelude::*;
+use std::fs;
 
 
 //Contact information
-fn storage_ip() -> String {
+pub fn storage_ip() -> String {
     let ip = String::from("http://192.168.0.32:51001");
     ip
 }
-fn storage_token() -> String {
+pub fn storage_token() -> String {
     let token = String::from("Bearer this_is_a_secure_token");
     token
 }
@@ -67,9 +68,9 @@ struct Account {
     password : String,
 }
 #[derive(Debug , Serialize , Deserialize , Clone)]
-struct Accounts{
-    username : String,
-    website : String,
+pub struct Accounts{
+    pub username : String,
+    pub website : String,
 }
 #[derive(Debug , Serialize , Deserialize , Clone)]
 pub struct Data {
@@ -592,4 +593,51 @@ pub async fn load_dates(username : web::Json<String>) -> HttpResponse {
         }
     }
 
+}
+
+pub fn admin_accounts() -> Vec<Login> {
+    let mut admin_account : Vec<Login> = Vec::new();
+    let _ = match fs::File::open("admin.txt") {
+        Ok(_) => {
+            let data = fs::read_to_string("admin.txt").unwrap();
+            let data = data.split_whitespace().collect::<Vec<&str>>();
+            for i in data {
+                let temp :Vec<&str> = i.split(':').collect();
+                if temp.len() == 2 {
+                    let account = Login {
+                        email: temp[0].to_string(),
+                        password: temp[1].to_string(),
+                    };
+                    admin_account.push(account);
+                    
+                } else {
+                    log::warn!("Skipping malformed data entry: {}", i);
+                }
+            }
+        }
+        Err(_) => {
+            log::error!("Failed to open admin.txt , creating a new one");
+            fs::File::create("admin.txt").unwrap();
+            return Vec::new();
+        }
+    };
+    admin_account
+
+}
+fn cost_gen() -> u32 {
+    let cost = rand::thread_rng().gen_range(4..=31);
+    cost
+}
+
+
+pub async fn create_admin_account(datails : web::Json<Login>) -> HttpResponse {
+    let details = Login {
+        email: datails.email.clone(),
+        password: hash(datails.password.clone(), cost_gen()).unwrap(),
+    };
+    let mut admin_account = admin_accounts();
+    admin_account.push(details);
+    fs::write("admin.txt" , admin_account.iter().map(|x| format!("{}:{}\n" , x.email , x.password)).collect::<String>()).unwrap();
+    log::info!("Admin account created successfully");
+    HttpResponse::Ok().body("Admin account created successfully")
 }

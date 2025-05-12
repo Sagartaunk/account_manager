@@ -5,6 +5,8 @@ use futures::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use actix_web::body::BoxBody;
+use crate::server::{admin_accounts , Login};
+use bcrypt::verify;
 
 pub struct Middleware;
 
@@ -50,14 +52,27 @@ where
             .map(|header| header.trim_start_matches("Bearer "))
             .unwrap_or("");
 
-        
-
-        let validation = match token {
-            "this_is_a_secure_token" => Ok(()), //Replace with token or validation logic 
-            _ => Err("Invalid token"),
+        let validation = { // Simple Validation login with 1 default account , email - admin , password - admin123
+            let details = token.split(':').collect::<Vec<_>>();
+            let mut is_valid = false;
+            let admin_account = admin_accounts();
+            for account in admin_account.iter() {
+                if details.len() == 2 {
+                    let username = details[0];
+                    let password = details[1];
+                    if account.email == username && verify(password, &account.password).unwrap_or(false) {
+                        is_valid = true;
+                        break;
+                    }
+                }
+            }
+            is_valid
         };
 
-        if validation.is_ok() {
+        
+
+
+        if validation {
             let fut = self.service.call(req);
             Box::pin(async move {
                 let res = fut.await?;
