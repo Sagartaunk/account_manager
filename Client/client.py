@@ -60,6 +60,7 @@ def get_data(url , data) : #Used to fetch usernames and websites of the stored a
     if response[2] :
         print("[~] Successful")
         print(response[3])
+        return response[3]
     else :
         print("[~] Failed ")
 
@@ -74,6 +75,9 @@ def add_data(url , data) : #Used to add data to the master account
         print("[~] Success")
     else :
         print("[~] Failed")
+
+def decrypt(url , data) :
+    data = get_data(url , data)
 
 
 
@@ -98,4 +102,14 @@ while True :
         
         case "Add" :
             add_data(base_url , {"email" : email , "password" : password})
-
+        case "Decrypt" :
+            decrypt(base_url , {"email" : email , "password" : password})
+        case "Admin" :
+            print("Under Construction")
+        case "Help" :
+            print("Here is a list of all commands you can perform : ")
+            print("Login : To login into a account \nRegister : To rgister a new account \nGet : To get the usernames and websites associated with the account \nDecrypt : Shows the list of associated usernames and websites and allows to decrypt the password of one account \nAdmin : To enter admin page \nExit : To Exit the program")
+        case "Exit" :
+            break
+        case "Admin" :
+            print("Under Construction")
