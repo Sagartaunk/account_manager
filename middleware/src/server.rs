@@ -14,7 +14,7 @@ use std::fs;
 
 //Contact information
 pub fn storage_ip() -> String {
-    let ip = String::from("http://192.168.0.32:51001");
+    let ip = String::from("http://192.168.0.100:51001");
     ip
 }
 pub fn storage_token() -> String {
@@ -22,7 +22,7 @@ pub fn storage_token() -> String {
     token
 }
 fn database_ip() -> String {
-    let ip = String::from("http://192.168.0.32:51000");
+    let ip = String::from("http://192.168.0.100:51000");
     ip
 }
 fn database_token() -> String {
@@ -400,12 +400,11 @@ pub async fn add_data(data : web::Json<Data>) -> HttpResponse {
             password: encrypt(token.clone(), data[2].to_string()),
         };
         let to_save =  format!("{}{}:{}:{}," ,saved_data.data ,  account.username , account.website , account.password);
-        log::info!("Data to save: {}", to_save.clone());
+
         let to_save = Database {
             token: token.clone(),
             data: to_save,
         };
-        log::info!("Data to save: {}", to_save.data.clone());
         let client = Client::new();
         let res = client.post(format!("{}/api/add", database_ip()))
             .header("Authorization", database_token())
