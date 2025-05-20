@@ -93,6 +93,20 @@ def decrypt(base_url, email, password):
     else:
         print("[~] Failed to decrypt or not found.")
 
+def search_entries(base_url, email, password):
+    url = f"{base_url}/get_data"
+    data = {"email": email, "password": password}
+    response = requests.post(url, json=data)
+    if response.status_code == 200:
+        entries = response.json()
+        query = input("[~] Search for (username/website): ").lower()
+        print("[~] Search Results:")
+        for entry in entries.split(","):
+            if query in entry.lower():
+                print(entry)
+    else:
+        print("[~] Failed to fetch entries.")
+
 # MAIN FUNCTION
 print("Welcome to Password Manager")
 print("Type 'Help' for help")
@@ -124,6 +138,11 @@ while True:
                 decrypt(base_url, email, password)
             else:
                 print("[~] Please login first.")
+        case "Search":
+            if email and password:
+                search_entries(base_url, email, password)
+            else:
+                print("[~] Please login first.")
         case "Help":
             print("Here is a list of all commands you can perform : ")
             print("Login : To login into an account")
@@ -131,6 +150,7 @@ while True:
             print("Get : To get the usernames and websites associated with the account")
             print("Add : To add a new username/website/password")
             print("Decrypt : To decrypt the password for a username/website")
+            print("Search : To search your entries")
             print("Exit : To Exit the program")
         case "Exit":
             break
