@@ -167,16 +167,3 @@ To modify service configurations:
 2. Change authentication tokens:
    - In `middleware/src/server.rs`, modify the `storage_token()` and `database_token()` functions
    - In each service's middleware implementation, update the token validation
-
-## Contributing
-
-If you're interested in contributing to the development of Account Manager, please feel free to submit pull requests or open issues for discussion.
-
-## Future Plans
-
-- Complete full Python version of the system
-- Implement password sharing functionality
-- Add password strength analysis
-- Enhance data visualization capabilities
-- Support for browser extensions
-- Mobile application interface
