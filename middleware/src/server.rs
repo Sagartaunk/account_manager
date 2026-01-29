@@ -87,6 +87,14 @@ pub struct GetPass {
 
 }
 
+#[derive(Debug , Serialize , Deserialize , Clone)]
+pub struct DeletePass {
+    email : String , 
+    master_password : String , 
+    username : String , 
+    website : String 
+}
+
 
 
 //Data Get Functions
@@ -511,6 +519,91 @@ pub async fn get_password(request : web::Json<GetPass>) -> HttpResponse {
                 return HttpResponse::NotFound().json(json!({
                     "error": "No matching account found"
                 }));
+            }
+        }
+    }
+}
+
+pub async fn delete_data(request : web::Json<DeletePass>) -> HttpResponse {
+    let login = Login {
+        email : request.email.clone(),
+        password : request.master_password.clone()
+    };
+    let (token, error) = get_token(login.clone()).await;
+    match error {
+        true => {
+            log::error!("{}", token);
+            return HttpResponse::InternalServerError().finish();
+        },
+        false => {
+            let data = data_get(token.clone()).await;
+            if data.data.is_empty() {
+                return HttpResponse::InternalServerError().body("No data found");
+            } else {
+                
+                let data_entries: Vec<String> = data.data.split(',')
+                                        .filter(|s| !s.is_empty())
+                                        .map(|s| s.to_string())
+                                        .collect();
+                
+                let mut found = false;
+                let mut new_data = String::new();
+                
+                for entry in data_entries {
+                    let values: Vec<&str> = entry.split(':').collect();
+                    if values.len() >= 3 {
+                        let account = Account {
+                            username: values[0].to_string(),
+                            website: values[1].to_string(),
+                            password : decrypt(token.clone(), values[2].to_string())
+                        };
+                        // Skip the entry that matches (delete it)
+                        if account.username == request.username.clone() && account.website == request.website.clone() {
+                            found = true;
+                            log::info!("Deleting entry for username: {}, website: {}", account.username, account.website);
+                        } else {
+                            // Keep other entries
+                            new_data.push_str(&format!("{}:{}:{},", account.username, account.website, encrypt(token.clone(), account.password)));
+                        }
+                    } else {
+                        log::warn!("Skipping malformed data entry: {}", entry);
+                    }
+                }
+                
+                if !found {
+                    return HttpResponse::NotFound().json(json!({
+                        "error": "No matching account found to delete"
+                    }));
+                }
+                
+                // Update database with new data (without the deleted entry)
+                let to_save = Database {
+                    token: token.clone(),
+                    data: new_data,
+                };
+                let client = Client::new();
+                let res = client.post(format!("{}/api/delete", database_ip()))
+                    .header("Authorization", database_token())
+                    .header("Content-Type", "application/json")
+                    .json(&to_save)
+                    .send()
+                    .await;
+                match res {
+                    Ok(response) => {
+                        if response.status().is_success() {
+                            return HttpResponse::Ok().json(json!({
+                                "message": "Data deleted successfully"
+                            }));
+                        } else {
+                            log::error!("Error: {}", response.status());
+                            return HttpResponse::InternalServerError().finish();
+                        }
+                    },
+                    Err(e) => {
+                        log::error!("Error: {}", e);
+                        return HttpResponse::InternalServerError().finish();
+                    }
+                }
             }
         }
     }

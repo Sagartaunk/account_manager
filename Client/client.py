@@ -121,6 +121,28 @@ def decrypt(base_url, email, password):
     else:
         print("[~] Failed to decrypt or not found.")
 
+def delete_entry(base_url, email, password):
+    url = f"{base_url}/delete_data"
+    username = input("[~] Username to delete: ")
+    website = input("[~] Website: ")
+    confirm = input(f"[~] Are you sure you want to delete '{username}' from '{website}'? (y/n): ")
+    if confirm.lower() == 'y':
+        data = {
+            "email": email,
+            "master_password": password,
+            "username": username,
+            "website": website
+        }
+        response = requests.post(url, json=data)
+        if response.status_code == 200:
+            print("[~] Entry deleted successfully!")
+        elif response.status_code == 404:
+            print("[~] Entry not found.")
+        else:
+            print("[~] Failed to delete entry.")
+    else:
+        print("[~] Deletion cancelled.")
+
 def search_entries(base_url, email, password):
     url = f"{base_url}/get_data"
     data = {"email": email, "password": password}
@@ -262,6 +284,11 @@ while True:
                 decrypt(base_url, email, password)
             else:
                 print("[~] Please login first.")
+        case "Delete":
+            if email and password:
+                delete_entry(base_url, email, password)
+            else:
+                print("[~] Please login first.")
         case "Search":
             if email and password:
                 search_entries(base_url, email, password)
@@ -276,6 +303,7 @@ while True:
             print("Get : To get the usernames and websites associated with the account")
             print("Add : To add a new username/website/password")
             print("Decrypt : To decrypt the password for a username/website")
+            print("Delete : To delete a username/website entry")
             print("Search : To search your entries")
             print("ADMIN : Enter admin mode (requires admin credentials)")
             print("Exit : To Exit the program")

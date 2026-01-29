@@ -29,6 +29,7 @@ async fn main() -> std::io::Result<()> {
                     .route("/create", web::post().to(create_data))
                     .route("/get" , web::post().to(get_data))
                     .route("/add" , web::post().to(add_data))
+                    .route("/delete" , web::post().to(delete_data))
             )
     }).bind(bind_address)?
     .run()
@@ -129,6 +130,32 @@ async fn add_data(data: web::Json<Data>) -> HttpResponse {
         }
         Err(e) => {
             log::error!("Failed to update data: {}", e);
+            HttpResponse::InternalServerError().body(format!("Database error: {}", e))
+        }
+    }
+}
+
+async fn delete_data(data: web::Json<Data>) -> HttpResponse {
+    let conn = match rusqlite::Connection::open("data.db") {
+        Ok(conn) => conn,
+        Err(e) => {
+            log::error!("Failed to open database: {}", e);
+            return HttpResponse::InternalServerError().body("Failed to connect to the database");
+        }
+    };
+    let token = data.token.trim_matches('"').to_string();
+    match conn.execute("UPDATE data SET DATA = (?1) WHERE TOKEN = (?2)", (&data.data, &token)) {
+        Ok(rows_updated) => {
+            if rows_updated == 0 {
+                log::warn!("No rows updated. Token {} not found.", token);
+                HttpResponse::NotFound().body("Token not found")
+            } else {
+                log::info!("Data deleted for token starting with {}", &token[..5]);
+                HttpResponse::Ok().finish()
+            }
+        }
+        Err(e) => {
+            log::error!("Failed to delete data: {}", e);
             HttpResponse::InternalServerError().body(format!("Database error: {}", e))
         }
     }

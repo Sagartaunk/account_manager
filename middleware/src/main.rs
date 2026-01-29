@@ -1,5 +1,5 @@
 
-use middleware::{middleware::Middleware , server::{login , register , get_data , add_data , get_password , load_dates , create_admin_account}};
+use middleware::{middleware::Middleware , server::{login , register , get_data , add_data , get_password , delete_data , load_dates , create_admin_account}};
 use actix_web::{web, App, HttpServer};
 use env_logger;
 use log;
@@ -26,6 +26,7 @@ async fn main() -> std::io::Result<()> {
             .route("/get_data" , web::post().to(get_data))
             .route("/add_data" , web::post().to(add_data))
             .route("/get_password" , web::post().to(get_password))
+            .route("/delete_data" , web::post().to(delete_data))
             
     }).bind(bind_address)?
     .run()
