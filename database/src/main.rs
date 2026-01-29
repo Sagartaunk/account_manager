@@ -150,12 +150,12 @@ async fn delete_data(data: web::Json<Data>) -> HttpResponse {
                 log::warn!("No rows updated. Token {} not found.", token);
                 HttpResponse::NotFound().body("Token not found")
             } else {
-                log::info!("Data deleted for token starting with {}", &token[..5]);
+                log::info!("Data field updated (entry removed) for token starting with {}", &token[..5]);
                 HttpResponse::Ok().finish()
             }
         }
         Err(e) => {
-            log::error!("Failed to delete data: {}", e);
+            log::error!("Failed to update data field: {}", e);
             HttpResponse::InternalServerError().body(format!("Database error: {}", e))
         }
     }

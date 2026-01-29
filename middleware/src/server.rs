@@ -558,7 +558,7 @@ pub async fn delete_data(request : web::Json<DeletePass>) -> HttpResponse {
                             password : decrypt(token.clone(), values[2].to_string())
                         };
                         // Skip the entry that matches (delete it)
-                        if account.username == request.username.clone() && account.website == request.website.clone() {
+                        if account.username == request.username && account.website == request.website {
                             found = true;
                             log::info!("Deleting entry for username: {}, website: {}", account.username, account.website);
                         } else {
