@@ -38,7 +38,7 @@ Account Manager is a secure, server-side password management system built with R
 - **Encrypted Password Storage**: AES-GCM encryption for all stored passwords
 - **Token-based Authentication**: Secure tokens for service communication
 - **User Management**: Registration, login, and account management
-- **Password Management**: Add, retrieve, and manage website passwords
+- **Password Management**: Add, retrieve, delete, and manage website passwords
 - **Admin Functions**: Monitor accounts and usage statistics
 - **Data Visualization**: Account creation date statistics with charts
 - **Search Capability**: Find stored passwords by username or website
@@ -121,6 +121,7 @@ Start each service in a separate terminal:
 - `POST /get_data` - Retrieve stored website entries (without passwords)
 - `POST /add_data` - Add a new website password
 - `POST /get_password` - Retrieve a specific password
+- `POST /delete_data` - Delete a specific password entry
 
 ### Protected Admin Endpoints
 
@@ -144,6 +145,7 @@ The Python CLI client provides a command-line interface with the following comma
 - `Get`: View stored website credentials (without passwords)
 - `Add`: Store new website credentials
 - `Decrypt`: Retrieve password for a specific website
+- `Delete`: Remove a password entry by username and website
 - `Search`: Find entries by username or website
 - `ADMIN`: Access admin functionality (requires admin credentials)
 - `Help`: Display available commands
